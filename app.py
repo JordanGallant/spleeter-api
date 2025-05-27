@@ -80,6 +80,9 @@ async def separate_audio(
             with open(input_path, 'wb') as f:
                 f.write(contents)
             
+            print(f"Input file saved: {input_path}")
+            print(f"File size: {os.path.getsize(input_path)} bytes")
+            
             # Create output directory
             output_dir = os.path.join(temp_dir, 'output')
             os.makedirs(output_dir, exist_ok=True)
@@ -93,6 +96,8 @@ async def separate_audio(
                 input_path
             ]
             
+            print(f"Running command: {' '.join(cmd)}")
+            
             # Add timeout to prevent hanging on Render
             result = subprocess.run(
                 cmd, 
@@ -101,20 +106,57 @@ async def separate_audio(
                 timeout=300  # 5 minute timeout
             )
             
+            print(f"Spleeter return code: {result.returncode}")
+            print(f"Spleeter stdout: {result.stdout}")
+            print(f"Spleeter stderr: {result.stderr}")
+            
             if result.returncode != 0:
                 raise HTTPException(
                     status_code=500,
                     detail=f"Spleeter processing failed: {result.stderr}"
                 )
             
+            # Debug: List all files in output directory
+            print(f"Contents of output directory {output_dir}:")
+            for root, dirs, files in os.walk(output_dir):
+                level = root.replace(output_dir, '').count(os.sep)
+                indent = ' ' * 2 * level
+                print(f"{indent}{os.path.basename(root)}/")
+                subindent = ' ' * 2 * (level + 1)
+                for file in files:
+                    print(f"{subindent}{file}")
+            
             # Create zip file with all tracks
             base_name = os.path.splitext(audio.filename)[0]
             track_dir = os.path.join(output_dir, base_name)
             
+            print(f"Looking for track directory: {track_dir}")
+            print(f"Track directory exists: {os.path.exists(track_dir)}")
+            
             if not os.path.exists(track_dir):
-                raise HTTPException(status_code=500, detail="No output tracks found")
+                # Try to find the actual output directory
+                subdirs = [d for d in os.listdir(output_dir) if os.path.isdir(os.path.join(output_dir, d))]
+                if subdirs:
+                    track_dir = os.path.join(output_dir, subdirs[0])
+                    print(f"Using alternative track directory: {track_dir}")
+                else:
+                    raise HTTPException(status_code=500, detail=f"No output tracks found. Expected: {track_dir}")
+            
+            # Check if there are any audio files in the track directory
+            audio_files = []
+            for root, dirs, files in os.walk(track_dir):
+                for file in files:
+                    if file.lower().endswith(('.wav', '.mp3', '.flac')):
+                        audio_files.append(os.path.join(root, file))
+            
+            if not audio_files:
+                raise HTTPException(status_code=500, detail="No audio files found in output directory")
+            
+            print(f"Found {len(audio_files)} audio files")
             
             zip_path = os.path.join(temp_dir, f'{base_name}_separated.zip')
+            
+            print(f"Creating zip file: {zip_path}")
             
             with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
                 for root, dirs, files in os.walk(track_dir):
@@ -122,6 +164,13 @@ async def separate_audio(
                         file_path = os.path.join(root, file)
                         arcname = os.path.relpath(file_path, track_dir)
                         zipf.write(file_path, arcname)
+                        print(f"Added to zip: {arcname}")
+            
+            print(f"Zip file created: {os.path.exists(zip_path)}")
+            print(f"Zip file size: {os.path.getsize(zip_path) if os.path.exists(zip_path) else 'N/A'}")
+            
+            if not os.path.exists(zip_path):
+                raise HTTPException(status_code=500, detail="Failed to create zip file")
             
             return FileResponse(
                 zip_path,
