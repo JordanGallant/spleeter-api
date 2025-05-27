@@ -1,5 +1,6 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 import os
 import tempfile
 import subprocess
@@ -11,6 +12,15 @@ app = FastAPI(
     title="Spleeter Audio Separation API",
     description="API for separating audio tracks using Spleeter",
     version="1.0.0"
+)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
 )
 
 ALLOWED_EXTENSIONS = {'mp3', 'wav', 'flac', 'm4a', 'ogg'}
